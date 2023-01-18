@@ -32,8 +32,9 @@ library(mapdata)
 library(maptools)
 library(moments)
 library(corrplot)
+library(treemap)
 
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, results='asis')
 ```
 
 ## DACSS 601: Data Science Fundamentals Final Paper
@@ -42,17 +43,18 @@ Global Terrorism Dataset
 
 ## Introduction
 
-26/11 (26 Nov) is a very heartbreaking day to remember for a lot of Indians. It was the day when India had one of its deadliest terror attacks. It happened in 2008 and I still remember watching the news for hourly updates on the terror attack. Every year when I come across this day, I always have a lot of questions in my head. How have the trends of Terrorism been over the years? Why are certain cities targeted more than others? What kind of weapons do different extremist groups use? Which is the most deadly extremist group? Is the extremism international or home-grown? and a lot more.
+26/11 (26 Nov) is a very heartbreaking day to remember for a lot of Indians. It was the day when India had one of its deadliest terror attacks. It happened in 2008 and I still remember watching the news for hourly updates on the terror attack. Every year when I come across this day, I always have a lot of questions in my head. How have the trends of Terrorism been over the years? Why are certain cities targeted more than others? What kind of weapons do different extremist groups use? Which is the most deadliest extremist group? Is the extremism international or home-grown? and a lot more.
+
 The topic for my final project was inspired by this and I decided to do this study on Global Terrorism to help answer my questions.
-The Global Terrorism Database (GTD) contains more than 200,000 records of terrorist attacks that have taken place around the world from 1970 till 2022. This Database is maintained by the National Consortium for the Study of Terrorism and Responses to Terrorism (START) at the University of Maryland. The database has a codebook wherein detailed explanations for each of the categories are provided. The database has been used by popular news channels to showcase trends in Regional Terror activities.
-It has all the necessary elements that can help me answer various questions that I hope to find with this study.
+The Global Terrorism Database (GTD) contains more than 200,000 records of terrorist attacks that have taken place around the world from 1970 till 2022. This Database is maintained by the National Consortium for the Study of Terrorism and Responses to Terrorism (START) at the University of Maryland. The database has a codebook wherein detailed explanations for each of the categories are provided. The database has been used by popular news channels to showcase trends in Regional Terror activities. It has all the necessary elements that can help me answer various questions that I hope to find with this study.
 
 
 ## Data
 
 ### Reading The Dataset
 The dataset is in the form of an excel file. It has nearly 209706 rows and 135 columns. Each row corresponds to a terror incident. The various fields include GTD ID, incident date, incident location, incident information, attack information, target/victim information, perpetrator information, perpetrator statistics, claims of responsibility, weapon information, casualty information, consequences, kidnapping/hostage taking information, additional and source information and many more.
-These fields need to be analysed and only the important ones are to be chosen for the study.
+
+These fields need to be analysed and only the important ones are chosen for the study.
 
 ```{r}
 #reading in data set which is in excel format
@@ -62,12 +64,14 @@ head(gtd, n=100)
 
 ### Describing The Data
 
-On having an initial overview of the data, there seems to be a lot of columns with plenty of NA values. Given that there are 135 columns, it will be good to remove those columns that might not add enough value to the analysis.
+On having an initial overview of the data, there seems to be a lot of columns with plenty of NA values. Given that there are 135 columns, it will be good to remove those columns that have minimal data and might not add enough value to the analysis.
+
 This data has values that are a mix of different types ranging from numerical, character, logical and much more. There is some redundant data as well. Certain fields have categories that are encoded. But along with it the corresponding text variable is also given. For instance, *country* has codes for which *country_txt* has the corresponding text. Such fields can be removed to avoid redundancy.
-Some fields like *summary*, *weapdetail* have entirely textual data which is not useful for statistical analysis and can be removed.
+Some fields like *summary*, *weapdetail* have entirely textual data which is not useful for statistical analysis and can be removed. 
+
 
 ```{r}
-str(gtd)
+#str(gtd, list.len=15)
 ```
 
 ### Tidying Data
@@ -76,38 +80,44 @@ There are different aspects to look into while cleaning a data set. Null values 
 
 #### 1. Removing null values
 
-Generally, it is good to have data which has less than 5% of NA values for analysis. But for my study, I am pushing it to 10%. I am dropping all those fields that have more than 10% of Null values. This is to ensure generalization and to avoid incorrect results.
+Generally, it is good to have data which has less than 5% of NA values for analysis. Though there are a lot of fields that have more than 5% of NA values, I am dropping only those columns that have 100% null values. Data imputation cannot be performed for such columns as there is no existing data. 
 
 ```{r}
-# To find those columns which have more than 10% of null values
+# To find those columns which have 100% null values
 cols <- list()
 for (col in names(gtd)) {
   nullVal <- (sum(is.na(gtd[,col]))/nrow(gtd))*100
-  if (nullVal > 10){
+  if (nullVal == 100){
     cols <- append(cols, col)
   }
 }
-print(paste("Number of columns with NA > 10% is", length(cols)))
+print(paste("Number of columns with NA = 100% is", length(cols)))
 gtd_select <- gtd %>% select(-(unlist(cols)))
 ```
 
-After removing the null values there are 45 fields that are remaining.
+After removing the null values there are 126 fields that are remaining.
 
-##### 2. Data Summary & Cleaning
+#### 2. Data Summary, Imputation & Cleaning
 
-The column *eventID* 12 digit event ID system where in the first 8 numbers correspond to the date in "yyyymmdd" format. The last 4 numbers are sequential case number for that given day of the format 0001, 0002, etc. This can be removed and new column *incDate* is created combining the *iyear*, *imonth* and *iday*. This field will be useful for creating time-series plot. Fields with encoded text categories are also removed.
+The column *eventID* 12 digit event ID system where in the first 8 numbers correspond to the date in "yyyymmdd" format. The last 4 numbers are sequential case number for that given day of the format 0001, 0002, etc. This can be removed and new column *incDate* is created combining the *iyear*, *imonth* and *iday*. This field will be useful for creating time-series plot. 
+
+Fields with encoded text categories are also removed. Few columns like *attacktype2*, *attacktype3* are an extension of the *attacktype1* column. These additional columns are included in case a particular incident can be classified under more than one attack type. Such additional columns are also removed as too much granularity is not needed for this study. The fields that have subcategoreies are also removed as it may not be required to answer my research questions.
+
 
 ```{r}
 gtd_select <- gtd_select %>% mutate(
   incDate = ymd(str_c(iyear,imonth,iday, sep="/")),.before = iyear) %>%
-  select(-c(eventid, country,region,specificity,doubtterr,attacktype1,targtype1,targsubtype1,natlty1,weaptype1))
+  select(-c(eventid, approxdate,resolution,country,region,location,summary,specificity,attacktype1,targtype1,targsubtype1,
+            natlty1,alternative,weaptype1,corp2,target2, natlty2,natlty2_txt,corp3,target3,natlty3,natlty3_txt,gsubname,
+            gname2,motive,guncertain2,guncertain3,claimmode,claim2,claimmode2,claim3,claimmode3,compclaim,weapsubtype1,
+            weapdetail,propextent,propcomment,addnotes,hostkidoutcome,related, contains("type3"), contains("type2"),
+            contains("type4"),contains("scite"),contains("ty2"),contains("ty3")))
 ```
-
 
 Using summarytools to get an overview of the data. The min, max, most frequently occurring categories, the percentage of null values, the data types and more information can be obtained from this.
 
 ```{r}
-dfSummary(gtd_select)
+print(dfSummary(gtd_select))
 ```
 
 
@@ -128,6 +138,7 @@ ggplot(incCount, aes(x=iyear, y=incidents, color="red")) + ggtitle("Global Terro
 
 The *extended* column tells if the duration of an incident is more than 24 hours (then 1) or if it's less than 24 hours (then 0).
 The *country_txt* column shows the top countries where the most terror incidents have occurred. We can see that Iraq has the highest number of incidents, then comes Afghanistan, Pakistan, India and Columbia. A lot of middle east and Asian countries have the highest terror incidents.
+
 On plotting *region_txt*, we can see the distribution of the incidents across 12 different regions. The countries that come under each of these regions can be referred from the GTD Codebook. The plot shows that Middle East & North Africa and South Asia have nearly same number of terror incidents and constitute for nearly 53% of global terror incidents.
 
 ```{r}
@@ -180,6 +191,15 @@ The fields *crit1*, *crit2* and *crit3* indicate the criteria under which the in
 * Criterion 3: OUTSIDE INTERNATIONAL HUMANITARIAN LAW
 There are incidents where there is an overlap of all three criterias. These can be filtered for further analysis later on.
 
+*doubterr* is 1, if there is doubt as to whether the incident was an act of terrorism. Else it is 0. *alternative_txt* depends on this. If there is doubt as to whether the incident is was an act of terrorism, the incident is then classified under 5 other categories. From the table we can see that nearly 82% of the incidents that were doubtful about being a terror attack were an Insurgency or Guerilla Action. 
+
+```{r}
+gtd_select %>% filter(doubtterr==1) %>% group_by(alternative_txt) %>% summarise(count = n()) %>% mutate(
+  percent = count/sum(count)*100
+) %>% select(-c(count)) %>% rename(AlternativeAttack = alternative_txt, Percentage = percent) %>% arrange(desc(Percentage))
+```
+
+
 *multiple* corresponds to 1, if the incident was part of multiple attacks, else it is 0. The percentage of single incidents is much higher than multiple incidents.
 *success* corresponds to 1, if the attack was successful, else it is 0. The attacks can be assassination, armed assault, bombing/explosion, hijacking, hostage taking(barricade or kidnapping), facility/infrastructure attack and unarmed assault. There have been nearly 88% of successful attacks compared to 12% of unsuccessful attacks.
 *suicide* corresponds to 1, if it was a suicide attack where the perpetrator did not intend to escape from the attack alive, 0 otherwise. Only 3.5% of the attacks were suicide attacks. This can mean that the perpetrators intended to live to carry out future attacks.
@@ -195,7 +215,13 @@ ggplot(attck, aes(fill=attacktype1_txt, y=incidents, x=iyear)) +
 ```
 
 
-*targtype1_txt* corresponds to the general type of target/victim. There are 22 categories with the highest category being Private Citizens and Property. Next comes the Military, then the Police, then the Government and then Business. There is an Unknown category here as well. We can ignore *targsubtype1_txt* for now as it has nearly 112 different subcategories of the main target type. *target1* is also too broad a category and is ignored for now.
+*targtype1_txt* corresponds to the general type of target/victim. There are 22 categories with the highest category being Private Citizens and Property. Next comes the Military, then the Police, then the Government and then Business. There is an Unknown category here as well. We can ignore *targsubtype1_txt* for now as it has nearly 112 different subcategories of the main target type and granularity is not required currently. *target1* is also too broad a category and highly specific. Hence, it is ignored for now.
+
+*corp1* is the entity or government agency that was targeted. Here, nearly 20% of the data has null values. 12% of the data is marked as Unknown, if the entity targeted was unspecified. About 11% of the data is marked as Not Applicable as no specific entity was targeted. Here, for the null values, we can rename them as "No Information".
+
+```{r}
+gtd_select <- gtd_select %>% mutate_at(vars(corp1), list(~ replace_na(., "No Information")))
+```
 
 *natlty1_txt* is the nationality of the Target/Victim. Here, in most cases it is same as that of the country in which the incident took place, but for Hijacking incidents, it is the nationality of the plane and not the passengers. Plotting a graph to see the nationalities of the planes in Hijacking incidents. The most number of such incidents has happened in India followed by Colombia. We can also see a category called International, which might imply that the incident happened while flying over more than one country.
 
@@ -214,9 +240,53 @@ ntlt %>% ggplot(aes(x=reorder(natlty1_txt, +incidents), y=incidents)) +
 
 *individual* is 1, if the perpetrator was not affliated to any known group and was by themselves. It was 0 otherwise. Only 0.4% of the incidents were caused by such individuals.
 
+*nperps* gives numerical data about the number of perpetrators involved in each incident. There are discrepancies with this. As mentioned in the codebook, it's best to consider the data only after 1997 for accuracy. Similarly *nperpcap* corresponds to the number of perpetrators who were captured. For this also, it's best to consider the data after 1997.
+
+After filtering the values for above 1997, we can see that the Null values for *nperps* and *nperpcap* has reduced to 9.3% and 2.4% respectively. These fields have -99 as the value when the number is not reported. Hence, this number cannot be taken in face value. 
+
+```{r}
+u <- gtd_select %>% filter(iyear > 1997) %>% select(nperps, nperpcap)
+print(dfSummary(u))
+```
+
+On looking at the statistics, for both these fields, the mean value is negative and there are outliers which tend to make the data very skewed. Hence, we will impute the null values with the respective median values, -99 for *nperps* and 0 for *nperpcap*.
+
+```{r}
+gtd_select <- gtd_select %>% mutate_at(vars(nperps), list(~ replace_na(., median(nperps, na.rm=T)))) %>% mutate_at(vars(nperpcap), list(~ replace_na(., median(nperpcap, na.rm=T))))
+```
+
+*claimed* is a categorical variable, with the value 1, if a group/person has claimed responsibility for the attack. It is 0 otherwise. The value of -9 occurs, if the data is not available. As there are nearly 31% null values, we can also assign -9 to these as it is unknown. The codebook also states that the data is systematically available from 1997 only. On filtering values with year greater than 1997, we can see that the unknown values only account to about 1% of the filtered data. 
+
+```{r}
+gtd_select <- gtd_select %>% mutate_at(vars(claimed), list(~ replace_na(., -9)))
+temp <- gtd_select %>% filter(iyear>1997) %>% select(claimed)
+print(dfSummary(temp))
+```
+
+
+*claimmode_txt* records one of the 10 modes used by claimants to claim responsibility. This field is also systematically present after 1997. Here we can see that nearly 88% of the data has null values. Furthermore, there is one extra abnormal category as '0' which can be renamed to Unknown. These entries exist only for those fields where there was a claim made to the terror attack. The 0.1% of missing values in the filtered data was reassigned to the category of 'Unknown'.
+The most popular modes of claiming attack are Personal Claims and Posting to Website or blog. The least common mode of claiming an attack were making a call prior to the incident and writing a letter.
+
+```{r}
+gtd_select <- gtd_select %>% mutate(claimmode_txt = replace(claimmode_txt, claimmode_txt == '0', 'Unknown'))
+gtd_select$claimmode_txt[gtd_select$iyear > 1997 & gtd_select$claimed == 1 & is.na(gtd_select$claimmode_txt)] <- "Unknown"
+temp <- gtd_select %>% filter(iyear>1997 & claimed==1) %>% group_by(claimmode_txt) %>% summarise(count = n())
+ 
+treemap(temp,
+            index="claimmode_txt",
+            vSize="count",
+            type="index",
+            palette = "Set3",                        
+            fontsize.title=12,
+            border.lwds=c(1),
+            title="Mode of Claiming Attack (1998 - 2020)",
+            )
+```
+
+
 *weaptype1_txt* correspond to the different categories of weapons used. There are 13 different categories including Other (weapons that do not fit into the other categories) and Unknown (weapon type could not be determined). The most used weapon is explosives, followed by Firearms.
 
-```{r fig.width = 8}
+```{r fig.width = 5}
 
 weap <- gtd_select %>% group_by(weaptype1_txt) %>% summarise(incidents = n()) %>%
   mutate(weaptype1_txt =
@@ -240,10 +310,20 @@ ggplot(weap, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=weaptype1_txt)) +
 
 ```
 
+There are nearly 30+ *weapsubtype1_txt* as mentioned in the codebook.  The null values are replaced with the category 'Unknown' which corresponds to the weapon type being Unknown. This field is however not very important for this study.
 
-*nkill* and *nwound* are numerical fields that correspond to the number of people killed and the number of people wounded respectively. From these fields less than 10% of the data are Nulls. We can combine these two into a single field to find the total number of casualties due to a terror incident. The mean casualties is near 5, the median is 1. The min is 0 and max is 12263. On plotting the histogram, it is seen that the plot is severely right skewed (highly positive skewness value).
+```{r}
+gtd_select <- gtd_select %>% mutate_at(vars(weapsubtype1_txt), list(~ replace_na(., "Unknown")))
+```
 
-```{r fig.width=3, fig.height=2}
+
+*nkill* and *nwound* are numerical fields that correspond to the number of people killed and the number of people wounded respectively and includes both the victims and attackers as well . From these fields less than 10% of the data are Nulls. These null values can be imputed with their respective mean values. We can then combine these two into a single field to find the total number of casualties due to a terror incident. The mean casualties is near 5.5, the median is 1. The min is 0 and max is 12263. On plotting the histogram, it is seen that the plot is severely right skewed (highly positive skewness value).
+
+
+```{r}
+
+gtd_select <- gtd_select %>% mutate_at(vars(nkill), list(~ replace_na(., mean(nkill, na.rm=T)))) %>% mutate_at(vars(nwound), list(~ replace_na(., mean(nwound, na.rm=T))))
+
 gtd_select <- gtd_select %>% mutate(
   ncasual = nkill+nwound, .before = nkill
 )
@@ -258,9 +338,103 @@ ggplot(cas, aes(x=ncasual))+
 
 ```
 
+
+*nkillus* corresponds to the number of US citizens killed in attacks and *nwoundus* is the number of US citizens wounded in the attacks. I am not focusing on these fields as this study focuses on global casualties. *nkillter* and *nwoundte* are the casualties with respect to the perpetrators. This field is also not focused in this study. *nkill* and *nwound* includes values from the above fields as well.
+
 *property* is 1 (49.1%), if property was damaged, else it is 0 (37.5%). There is also another entry of '-9' (13.4%) which corresponds to those incidents for which there is not enough data. This can be ignored during visualization.
 
+*propextent_txt* is the extent to which property damage has taken place. There are 4 sub categories based on the property value in dollars. These categories can be renamed for ease of reading. Furthermore, there is also an abnormal value of 7 which can be renamed to Unknown. Null values are also renamed to Unknown. Most of the known damages are under the Minor category. Major and Catastrophic property damages are very minimal.
+
+```{r}
+gtd_select <- gtd_select %>% mutate(propextent_txt = replace(propextent_txt, propextent_txt == '7', 'Unknown')) %>%
+  mutate(propextent_txt =
+    case_when(
+      propextent_txt == "Minor (likely < $1 million)" ~ "Minor",
+      propextent_txt == "Major (likely >= $1 million but < $1 billion)" ~ "Major",
+      propextent_txt == "Catastrophic (likely >= $1 billion)" ~ "Catastrophic",
+      TRUE ~ as.character(propextent_txt)
+    ))
+gtd_select$propextent_txt[gtd_select$property == 1 & is.na(gtd_select$propextent_txt)] <- "Unknown"
+
+temp <- gtd_select %>% filter(property == 1) %>% group_by(propextent_txt) %>% summarise(count = n()) %>%
+  mutate(percent = count/sum(count)*100) %>% select(-c(count)) %>%
+  rename(PropertyDamageExtent = propextent_txt, Percentage = percent) %>% arrange(desc(Percentage))
+temp
+```
+
+*propvalue* gives the numerical value of the value of the property that was damaged in dollars. Here, we filter those properties that were damaged and have the extent as Unknown. From this, we can see that the number of null values is about 22%. The values with -99 can further be filtered as these correspond to Unknown values. We can now see that the mean of the damaged property value is \$825,308 and the median is \$25,000. We can also see that the histogram is highly skewed to the right.
+
+```{r}
+temp <- gtd_select %>% filter(property == 1 & propextent_txt != 'Unknown' & propvalue != -99) %>% select(property, propextent_txt, propvalue)
+
+summary(temp$propvalue)
+skewness(temp$propvalue)
+ggplot(temp, aes(x=propvalue))+
+  geom_histogram(color="darkblue", fill="maroon") + ggtitle("Damaged Property Value Histogram") +
+  labs(x="Damaged Property Value", y="Incidents Count")
+```
+
+
 *ishostkid* is 1 (8.0%), if the victim was taken hostage or kidnapped, else it is 0 (91.7%). The '-9' (0.3%) category corresponds to unknown entries which can be ignored during visualization.
+
+*nhostkid* is the number of victims that were taken hostage during an incident. This includes kidnapping and hijacking incidents as well. Here, we filter hostage incidents and then look for null values. We can see that there are few null values, which can be replaced with the median value after filtering the entries with -99. This value is also severely skewed to the right. *nhostkidus* is the number of hostages who were US nationals. This is included in *nhostkid* and is not needed for this study.
+
+```{r}
+gtd_select$nhostkid[gtd_select$ishostkid == 1 & is.na(gtd_select$nhostkid)] <- 2
+```
+
+*nhours* and *ndays* are collected for attack types which are “Hostage Taking (Kidnapping),” “Hostage Taking (Barricade Incident),” or (successful) “Hijacking”. If an incident occurs for more than 24 hours then, *nhours* is zero and only *ndays* is noted. On excluding the unknown hours and days, we can find the mean and median hours and days for which victims are taken as hostage. The average number of hours for which a victim is taken hostage is nearly 21 hours and the median is 2 hours. Whereas, the average number of days for which a victim is taken hostage is about 48 days and the median is 5 days.
+
+
+```{r}
+hours <- gtd_select %>% filter(attacktype1_txt == 'Hostage Taking (Kidnapping)' | attacktype1_txt == 'Hostage Taking (Barricade Incident)' | (attacktype1_txt == 'Hijacking' & success == 1)) %>% filter(nhours != -99 & nhours != -9 & extended == 0 ) %>% select(nhours)
+print(summary(hours))
+
+days <- gtd_select %>% filter(attacktype1_txt == 'Hostage Taking (Kidnapping)' | attacktype1_txt == 'Hostage Taking (Barricade Incident)' | (attacktype1_txt == 'Hijacking' & success == 1)) %>% filter(ndays != -99 & ndays != -9 & extended == 1 ) %>% select(ndays)
+print(summary(days))
+```
+
+*divert* and *kidhijcountry* corresponds to the country where the hijackers diverted the vehicle and the country in which the hijacking was resolved respectively. The entries exist for specifically for “Hostage Taking (Kidnapping)” or “Hijacking” attack types. Here we can see that there are close to 78% null values indicated that, of the specified Hijacking incidents nearly 78% of them ended up not being resolved in another country.
+
+
+```{r}
+country_hijack <- gtd_select %>% filter(attacktype1_txt == 'Hijacking' | attacktype1_txt == 'Hostage Taking (Kidnapping)') %>% select(kidhijcountry)
+print((sum(is.na(country_hijack))/nrow(country_hijack))*100)
+```
+
+*ransom* has the value 1, if the incident involved a demand of monetary ransom. It is 0 otherwise. It has -9, if it is unknown if there was a monetary ransom. There are about 61.6% of null values, which indicate that there was no ransom applicable.
+
+*ransomamt* is the ransom amount demanded in US Dollars. The entry exists only if *ransom* is equal to 1. -99 exists for unknown monetary figures. Here, we can see that the average ransom amount is \$3,642,077 and the median ransom amount is \$61,526. *ransomamtus* is the ransom amount demanded from US sources. This is not required for the study currently. 
+*ransompaid* is the ransom amount paid in US Dollars. This field also has an entry of -99 if the monetary figure is unknown. Here, we can see that the average ransom amount paid is \$1,214,101 and the median ransom amount paid is \$323. *ransompaidus* is the ransom amount paid by US sources. This is also not required for the study currently.
+
+
+```{r}
+summary(gtd_select %>% filter(ransom == 1 & ransomamt != -99) %>% select(ransomamt))
+summary(gtd_select %>% filter(ransom == 1 & ransompaid != -99) %>% select(ransompaid))
+```
+
+*hostkidoutcome_txt* is the field which tells the fate of the hostages and kidnapped victims. If the “Attack Type” is “Hostage Taking (Kidnapping)”, “Hostage Taking (Barricade Incident),” or a successful “Hijacking,” then this field applies. Nearly 17% of the filtered data have missing values. These can be replaced as Unknown. The distribution of the Hostage Kidnapping Outcomes are seen in the bar graph. 
+
+```{r}
+
+gtd_select$hostkidoutcome_txt[(gtd_select$attacktype1_txt == 'Hostage Taking (Kidnapping)' | gtd_select$attacktype1_txt == 'Hostage Taking (Barricade Incident)' | (gtd_select$attacktype1_txt == 'Hijacking' & gtd_select$success == 1)) & is.na(gtd_select$hostkidoutcome_txt)] <- "Unknown"
+
+outcome <- gtd_select %>% filter(attacktype1_txt == 'Hostage Taking (Kidnapping)' | attacktype1_txt == 'Hostage Taking (Barricade Incident)' | (attacktype1_txt == 'Hijacking' & success == 1)) %>%  select(hostkidoutcome_txt) %>% group_by(hostkidoutcome_txt) %>% summarise(count = n()) %>% arrange(desc(count))
+
+outcome %>% ggplot(aes(x=reorder(hostkidoutcome_txt, +count), y=count)) +
+  geom_bar(stat="identity", fill="#a630a0", alpha=.9, width=.5)+
+    coord_flip() +
+     ggtitle("Distribution of Hostage Kidnapping Outcomes") + labs(x="Hostage Kidnapping Outcomes", y ="Incidents")
+```
+
+
+*nreleased* gives the number of hostages who survived “Hostage Taking (Kidnapping)” or “Hostage Taking (Barricade Incident)” or a successful “Hijacking” incident. The value of -99 is given to Unknown entries. From the filtered data, we can see that the average number of hostages who survive such an incident is 7 and the median value is 1.
+
+```{r}
+release <- gtd_select %>% filter(attacktype1_txt == 'Hostage Taking (Kidnapping)' | attacktype1_txt == 'Hostage Taking (Barricade Incident)' | (attacktype1_txt == 'Hijacking' & success == 1)) %>%  select(nreleased) %>% filter(nreleased != -99)
+print(summary(release))
+```
+
 
 *dbsource* had details about the teams that took efforts to collect and consolidate all this data. Currently, it is being maintained and constantly updated by the START team at University of Maryland. But, there have been other groups that have helped with this data collection through the years. From the summarytable, we can see that nearly 50% of the data was collected by START and nearly 30% of the data was collected by PGIS. But I would like to know which team was responsible for the collection of the data through the years.
 From the plot, we can see that during the early years, PGIS played a major role in collecting the data, then CETIS for a couple of years, followed by ISVG. Finally START took over to maintain the database entirely. Overlapping of these major teams is not seen from the plot. There are however, other smaller teams which have contributed occasionally to the database.
@@ -298,7 +472,7 @@ gtd_select <- gtd_select %>% select(-c(INT_MISC)) %>%
   ) %>% select(-c(INT_ANY,INT_LOG,INT_IDEO))
 ```
 
-```{r fig.width=10, fig.height= 6}
+```{r fig.width=10}
 int <- gtd_select %>% filter(intNew!=-9) %>%  group_by(intNew, region_txt) %>%
   summarise(fatal = sum(ncasual, na.rm=TRUE)) %>%
   mutate(intNew =
@@ -339,7 +513,7 @@ With the tidied dataset, I would like to answer the research questions that I ha
 ### Viz 1
 Firstly I am splitting the years into four sections - 1970-1984, 1984-1999, 2000-2009, 2010-2020. Plotting the world map for each incident separately along with the distribution of successful and unsuccessful attacks are also shown.
 
-```{r fig.width = 12, fig.height=5}
+```{r fig.width = 8}
 # create data for world coordinates using map_data() function
 world <- map_data("world")
 
@@ -424,19 +598,19 @@ There is stark difference between the four plots. We can very clearly see that t
 Drawing a correlation plot can help us determine those numerical variables that are related to other variables. I would like to know such factors which have strong correlation as it can help derive lots of conclusions. Some of the categorical variables like extended, multiple, success are all one-hot encoded and hence can be used as numerical data.
 
 ```{r}
-corFeat <- gtd_select[,c("iyear","imonth","iday","extended","vicinity","multiple","success","suicide","guncertain1","individual","nkill", "nwound","property","ishostkid","intNew")]
+corFeat <- gtd_select[,c("intNew","iyear","imonth","iday","extended","vicinity","multiple","success","suicide","guncertain1","individual","nkill", "nwound","nperps","nperpcap","nhostkid","propvalue","nhours","nreleased")]
 corFeat <- na.omit(corFeat)
 correlations <- cor(corFeat)
 corrplot(correlations, method="circle", order = 'alphabet')
 ```
 
-From this plot we can see that there is not much correlation between the numerical features of the cleaned data. Only *nwound* and *nkill* tend to show high correlation. This is probably because they both are the casualties and terror attack damages can cause death or injure civilians/people. We can also see low correlation between property damage feature and the year. Another low correlation is also seen between intNew and guncertain1. The small correlation between idhostkid and extended can be explained. extend tells if the terror activity is for more than 24 hours or not and idhostkid, tells us if the terror groups have kidnapped hostages or not. Usually, there will be negotiations in such hostage situations which will take time and hence can relate to the terror incident lasting for more than 24 hours. The relations between other factors seem to be pretty weak.
+From this plot we can see that there is sporadic correlation between the numerical features of the cleaned data. Mainly *nwound* and *nkill* tend to show high positive correlation. This is probably because they both are the casualties and terror attack damages can cause death or injure civilians/people. There is also high positive correlation between *nreleased* and *nhostkid*. We can also see low correlation between number of perpetrators, suicide attacks and claimed attacks. There is strong positive correlation between the year and claimed attacks as well. There is also negative correlation between *nhours* and *iyear* and also between damaged property value and iyear. All other fields seem to have weak correlations.
 
 ### Viz 3
 
 Here, I am selecting the top 6 deadly terror groups based on the highest number of casualties. Then on plotting the different attack types used by each group, we can see the most popular method of terror attack that a group follows. Furthermore, on including the weapon type as a sub group, we can see the respective weapons that are being used for carrying out the attacks.
 
-```{r fig.width=14, fig.height= 6}
+```{r fig.width=10, fig.height=8}
 trgrp <- gtd_select %>% select(iyear, incDate, gname, region_txt) %>% filter(gname != "Unknown") %>%
   group_by(gname) %>% summarise(incidents = n()) %>% arrange(desc(incidents)) %>% head(n=6) 
 names <- c(trgrp$gname)
@@ -461,7 +635,7 @@ This plot gives an overall idea of the most preferred attack types and weapon ty
 
 I wanted to see how the different extremist groups have lasted through different years. Was there any group that had a downfall? Was there any group that had a sudden uprising? Selecting a few groups only as there are 2000+ such extremist groups.
 
-```{r fig.width = 12, fig.height=5 }
+```{r fig.width = 10}
 grp <- gtd_select %>% select(iyear, incDate, gname, region_txt) %>% filter(gname != "Unknown") %>% filter(gname == "Taliban" | gname == "Islamic State of Iraq and the Levant (ISIL)" | gname == "Al-Shabaab" | gname == "Boko Haram" | gname == "Shining Path (SL)" | gname == "New People's Army (NPA)" | gname == "Farabundo Marti National Liberation Front (FMLN)" | gname == "Houthi extremists (Ansar Allah)" | gname == "Irish Republican Army (IRA)" | gname == "Kurdistan Workers' Party (PKK)") %>% 
   group_by(iyear, gname) %>% summarise(incidents = n()) %>% arrange(desc(incidents))
 
@@ -505,14 +679,14 @@ The dataset had extensive information that could answer all of my research quest
 
 ## Bibliography
 
-* [1] https://www.start.umd.edu/gtd/
-* [2] https://www.r-project.org
-* [3] https://r4ds.had.co.nz/index.html
-* [4] https://r-graph-gallery.com/218-basic-barplots-with-ggplot2.html#horiz
-* [5] https://rforhr.com/arrange.html
-* [6] https://ggplot2.tidyverse.org/index.html
-* [7] https://www.kaggle.com/datasets/START-UMD/gtd?datasetId=504&sortBy=voteCount
-* [8] https://www.huffingtonpost.co.uk/2015/11/28/islamic-state-terrorism-threat_n_8670458.html
-* [9] https://rpubs.com/julianhatwell/gtd
-* [10] https://www.datanovia.com/en/blog/how-to-create-a-map-using-ggplot2/
+* [1] <https://www.start.umd.edu/gtd/>
+* [2] <https://www.r-project.org>
+* [3] <https://r4ds.had.co.nz/index.html>
+* [4] <https://r-graph-gallery.com/218-basic-barplots-with-ggplot2.html#horiz>
+* [5] <https://rforhr.com/arrange.html>
+* [6] <https://ggplot2.tidyverse.org/index.html>
+* [7] <https://www.kaggle.com/datasets/START-UMD/gtd?datasetId=504&sortBy=voteCount>
+* [8] <https://www.huffingtonpost.co.uk/2015/11/28/islamic-state-terrorism-threat_n_8670458.html>
+* [9] <https://rpubs.com/julianhatwell/gtd>
+* [10] <https://www.datanovia.com/en/blog/how-to-create-a-map-using-ggplot2/>
 
